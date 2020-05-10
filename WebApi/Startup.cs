@@ -12,9 +12,10 @@ using Microsoft.Extensions.Hosting;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.SqlServer;
 using Microsoft.Extensions.Logging;
-using Microsoft.OpenApi.Models;
-using Swashbuckle.AspNetCore;
-using Swashbuckle.AspNetCore.SwaggerUI;
+using WebApi.Services;
+using System.Text;
+using Microsoft.AspNetCore.Authentication.JwtBearer;
+using Microsoft.IdentityModel.Tokens;
 
 namespace WebApi
 {
@@ -34,12 +35,38 @@ namespace WebApi
             services.AddDbContext<AppDbContext>(
                 options => options.UseSqlServer(Configuration.GetConnectionString("DefaultConnexion"))
             );
-
+            //services.AddTransient<IUserService, UserService>();
+            services.AddCors();
             services.AddControllers();
-            services.AddSwaggerGen(x =>
+            services.AddSwaggerDocument();
+
+            // configure strongly typed settings objects
+            var appSettingsSection = Configuration.GetSection("AppSettings");
+            services.Configure<AppSettings>(appSettingsSection);
+
+            // configure jwt authentication
+            var appSettings = appSettingsSection.Get<AppSettings>();
+            var key = Encoding.ASCII.GetBytes(appSettings.Secret);
+            services.AddAuthentication(x =>
             {
-                x.SwaggerDoc("v1", new OpenApiInfo());
+                x.DefaultAuthenticateScheme = JwtBearerDefaults.AuthenticationScheme;
+                x.DefaultChallengeScheme = JwtBearerDefaults.AuthenticationScheme;
+            })
+            .AddJwtBearer(x =>
+            {
+                x.RequireHttpsMetadata = false;
+                x.SaveToken = true;
+                x.TokenValidationParameters = new TokenValidationParameters
+                {
+                    ValidateIssuerSigningKey = true,
+                    IssuerSigningKey = new SymmetricSecurityKey(key),
+                    ValidateIssuer = false,
+                    ValidateAudience = false
+                };
             });
+
+            // configure DI for application services
+            services.AddScoped<IUserService, UserService>();
         }
 
         // This method gets called by the runtime. Use this method to configure the HTTP request pipeline.
@@ -50,14 +77,10 @@ namespace WebApi
                 app.UseDeveloperExceptionPage();
             }
             app.UseStaticFiles();
-            var swaggerOptions = new SwaggerOptions();
-            Configuration.GetSection(nameof(SwaggerOptions)).Bind(swaggerOptions);
-            app.UseSwagger();
-            app.UseSwaggerUI(option =>
-            {
-                option.SwaggerEndpoint("/swagger/v1/swagger.json", "My API V1");
-                option.RoutePrefix = string.Empty;
-            });
+            //var swaggerOptions = new SwaggerOptions();
+            //Configuration.GetSection(nameof(SwaggerOptions)).Bind(swaggerOptions);
+            app.UseOpenApi();
+            app.UseSwaggerUi3();
             app.UseHttpsRedirection();
 
             app.UseRouting();
